@@ -1,0 +1,221 @@
+---
+title: "EXCESS MORTALITY OF COVID_19, IRAN"
+author: "Yasamin Vaziri"
+output: html_document
+date: "2023-05-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summery to what I've done
+
+to begin, as we discussed in class, a possible way (which I've done) to answer the first question, for the past 5 years, for each province and month, we fit a linear model, then we predicted the years after covid base on our model. 
+
+the number that we have predicted is 'num_predict', we go through  '2*sigma+ num_predict' and we conclude base on
+this number. 
+if this is greater that the number in data set, it means that it is in the 95% interval
+which means we did not have excess mortality but if don't, this means there exists  excess mortality. getting the difference between the n we predicted and the n in the data set, we reach excess mortality number!.
+
+
+for the heat map, it is better to be normalized, we can divide the excess mortality to all 'n' of that province. Because, the more crowded province has more deaths so the heat map will not be trustworthy except we normalized the data so the  severity of corona will be increased in that province so that we can trust.
+
+we can answer the second and third question, base on the question one. 
+
+And finally, for the last question, we draw a map base the normalized excess mortality to compare different provinces where the less normalized excess mortality can show better result.
+
+but to be more precise, we don't care if the older people die, because the youth can 
+struggle with the virus but the older people might die sooner. 
+so the number of deaths in youth is a sign that corona was more severe.
+
+
+
+## Question 1 
+
+first we saw the connection of the first and second half of the years with total mortality:
+
+
+```{r, message=FALSE}
+library(data.table)
+library(ggplot2)
+
+```
+
+we read file from:
+
+```{r}
+d = fread('C:\\Users\\Yasmine\\Documents\\daaa\\iranprovs_mortality_monthly (1).csv', encoding = "UTF-8") 
+
+```
+
+
+and we use another variable in data set as well as deleting two columns sex and age
+
+```{r}
+d$ym_num = d$y + d$m / 12 - 1/24
+ds = d[, .(n = sum(n)), .(y, m, ym_num)]
+```
+
+and now this is the plot showing us that there is a connection!
+
+```{r pressure, echo=FALSE, message=FALSE}
+ggplot(ds, aes(ym_num, n))+
+  geom_line()+
+  geom_point()+
+  scale_x_continuous(breaks = 1389:1401)+
+  scale_y_continuous(limits = c(0, 71000))+
+  geom_vline(xintercept = 1398 + 10/12 -1/24, linetype = 'dashed')
+
+
+```
+
+also clear that when did corona start: Oct-Nov (Dey) 1398.
+
+now, before starting fitting, we creat the new data set 
+```{r}
+ds = d[, .(n = sum(n)), .(y, m, ym_num, prov)]
+
+```
+
+and to avoid non linear parameters, we only look at the past 5 years. meanwhile we define the time that covid had started: 
+```{r}
+ds = d[, .(n = sum(n)), .(y, m, ym_num, prov)]
+
+
+ym_num_covid = 1398 + 10/12 - 1/24
+
+
+ym_num_start = ym_num_covid - 5
+
+```
+
+after adding 3 columns for answers, 
+
+```{r}
+ds$excess_mortality=0
+ds$norm_excess_mortality=0
+ds$num_predict=0
+```
+
+we fit the model: 
+
+```{r}
+for (i in 1:31) { 
+  PROV = unique(ds$prov)[i]
+  for (j in 1:12) {
+    M = j
+    dsm = ds[prov == PROV & m == M,]
+    dsm = dsm[ym_num > ym_num_start]
+    dsm2fit = dsm[ym_num < ym_num_covid]
+    fit = lm(n ~ ym_num, dsm2fit)
+    pvalue = summary(fit)$coefficients[,4][2]
+    if(pvalue > .7){
+      dsm$num_predict = mean(dsm2fit$n)
+    } else{
+      dsm$num_predict = predict(fit,dsm)
+    }
+    sigman = summary(fit)$sigma
+    dsm$excess_mortality = dsm$n-dsm$num_predict
+    
+    
+    
+    dsm[dsm$num_predict + 2*sigman > dsm$n]$excess_mortality = 0
+    ds[prov == PROV & m == M & ym_num > ym_num_start]$excess_mortality = dsm$excess_mortality
+    ds[prov == PROV & m == M & ym_num > ym_num_start]$norm_excess_mortality = dsm$excess_mortality/sum(dsm$n)
+    #random province
+    if(j == 12){
+      
+     ggplot(dsm)+
+        geom_smooth(aes(ym_num, num_predict), method = 'lm')+
+        geom_point(aes(ym_num, n), size = 1)+
+        scale_x_continuous(breaks = 1389:1401)+
+         geom_vline(xintercept = 1398 + 10/12 -1/24, linetype = 'dashed')+
+         ggtitle(label = PROV, subtitle = paste('month: ', M))+xlab("year")+xlab("death")
+      
+    }
+
+    
+  }
+  
+}
+```
+
+
+ drawing the heat map : 
+
+```{r heat, echo=FALSE, message=FALSE}
+ggplot(ds[ym_num > 1398.5], aes(x = ds[ym_num > 1398.5]$ym_num,
+                                y = ds[ym_num > 1398.5]$prov, fill = norm_excess_mortality))+
+                                xlab("year")+ylab("Province")+geom_tile() + 
+                                scale_fill_gradient(high = "red", low = "grey")
+
+
+
+```
+
+
+So the first question is answered! 
+
+as an example, the plot of a random province is also shown below:
+
+```{r yazd12, echo=FALSE, message=FALSE}
+  
+      
+     ggplot(dsm)+
+        geom_smooth(aes(ym_num, num_predict), method = 'lm')+
+        geom_point(aes(ym_num, n), size = 1)+
+        scale_x_continuous(breaks = 1389:1401)+
+         geom_vline(xintercept = 1398 + 10/12 -1/24, linetype = 'dashed')+
+         ggtitle(label = PROV, subtitle = paste('month: ', M))+xlab("year")+xlab("death")
+      
+    
+
+
+```
+
+
+the plots of all months can be shown base on the code.
+
+## Question two
+
+this is simple to calculate, we get sum from all excess mortality:
+
+```{r}
+print("total excess mortality: ")
+print(sum(ds$excess_mortality))
+```
+
+## Question three
+
+```{r}
+for (i in 1:31) {
+  PROV=unique(ds$prov)[i]
+  print(paste("total excess mortality in ", PROV, " :", sum(ds[ds$prov == PROV, ]$excess_mortality)))
+ 
+}
+```
+
+
+## Question four
+
+as I said, we can use the normalized excess mortality. but note that this result will be without the intervention of age. In this way, we eliminate the influence of the population
+and we only look at the number of deaths.
+
+```{r q4, echo=FALSE, message=FALSE}
+  
+  ggplot(ds)+
+  geom_point(aes(prov, norm_excess_mortality), size = 1)+
+  ggtitle(label = "Normal Excess Mortality by Province")+
+  xlab("province")+ylab("normal excess mortalities")
+
+
+```
+
+so base on the plot, I would answer a province like "Sistan & Balouchestan".
+Generally, there are several ways to answer this question, we could also use corona waves in the way that what provinces were more successful in different waves.
+
+
+If we want to influence age, we can assign a weight to each age group so that the young age group bears more weight, then we add the number of deaths in each age group according to their weight, and each province that A lower total dose means that it has been more successful, which is statistically consistent with the first method.
+
+# Thanks For Reading 
